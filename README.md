@@ -1,201 +1,436 @@
 # QueryMind CLI
 
-**Describe what you want in plain English. Get SQL that is correct for *your actual database*, verified before you ever see it.**
+**Workspace-aware natural-language-to-SQL for your terminal. It reads your real schema, verifies every query safely, and works with free LLM APIs.**
 
-QueryMind lives in your terminal and your project. It reads your real MySQL schema (tables, keys, enum values, column comments), drafts a query with an LLM, checks it with a parser and `EXPLAIN`, runs it safely, and repairs its own mistakes. You never paste a schema or hand-fix a column name.
-
-```
-$ querymind ask "which countries bring in the most revenue, and what share of the total is each?"
-
-  > Drafted query
-  > Repair 1/2: The database rejected the query at planning time: Unknown column 'oi.price'
-  > Drafted query
-╭──────────────────────────────── SQL ─────────────────────────────────╮
-│ WITH revenue AS (SELECT c.country, SUM(oi.quantity * oi.unit_price   │
-│   * (1 - oi.discount_pct / 100)) AS revenue FROM orders AS o JOIN ...│
-╰──────────────────────────────────────────────────────────────────────╯
-What it does: Ranks countries by net revenue and shows each one's share of the total.
-Assumption: Excluded cancelled and refunded orders, per the status column comment
-┏━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
-┃ country ┃ revenue   ┃ revenue_rank ┃ pct_of_total ┃
-┡━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
-│ US      │ 329632.82 │ 1            │ 23.3         │
-│ DE      │ 302412.04 │ 2            │ 21.4         │
-...
-8 rows · 0.004s · gemini/gemini-2.5-flash · 2 model calls · 1 self-repair
-```
-
-## Why this exists
-
-Browser-based text-to-SQL tools are stateless: you paste a schema, get SQL back, and hope. The usual failure is the model inventing a table or column it was never shown. QueryMind removes that failure mode:
-
-| Typical web tool | QueryMind CLI |
-|---|---|
-| You paste the schema by hand | Reads the live schema, foreign keys, enums, and comments itself |
-| One shot, no verification | Parses, plans (`EXPLAIN`), and executes before showing you |
-| Wrong column? You fix it | The exact MySQL error goes back to the model, which repairs it |
-| No idea what your business terms mean | Reads `QUERYMIND.md` ("revenue = net of discounts, excl. cancelled") |
-| Locked to one AI vendor | Any OpenAI-compatible API; free tiers work; automatic fallback |
-
-No model training required: it works with hosted LLMs, including free tiers, or a local model via Ollama.
-
-## Quick start (about 3 minutes)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+![Tests](https://img.shields.io/badge/tests-131%20passing-brightgreen)
+![Databases](https://img.shields.io/badge/databases-MySQL%20%7C%20PostgreSQL%20%7C%20SQLite-informational)
+![LLMs](https://img.shields.io/badge/LLMs-Gemini%20%7C%20Groq%20%7C%20Ollama-orange)
+![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
 ```bash
-git clone https://github.com/<you>/querymind-cli && cd querymind-cli
+querymind ask "top 5 customers by revenue in 2024"
+```
+
+The shorter alias `qm` works for every command, for example `qm ask "..."`.
+
+---
+
+## Table of Contents
+
+- [Why QueryMind](#why-querymind)
+- [Key Features](#key-features)
+- [How It Works](#how-it-works)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Command Reference](#command-reference)
+- [Configuration](#configuration)
+- [LLM Providers](#llm-providers)
+- [Safety, Privacy and Write Protections](#safety-privacy-and-write-protections)
+- [Workspace Awareness and QUERYMIND.md](#workspace-awareness-and-querymindmd)
+- [Use as an MCP Server](#use-as-an-mcp-server)
+- [Benchmarks](#benchmarks)
+- [Project Structure](#project-structure)
+- [Development and Testing](#development-and-testing)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
+
+## Why QueryMind
+
+Most browser-based text-to-SQL tools are stateless, one-shot prompt forms. You paste your `CREATE TABLE` statements, get a query back, and when the model hallucinates a column or breaks a join, you are left debugging SQL by hand.
+
+QueryMind fixes the root cause by living inside your project terminal as an autonomous agent. It does not guess. It inspects your live schema, reads your project files, tests its own SQL, and repairs its own mistakes before showing you anything.
+
+| Typical text-to-SQL tool | QueryMind CLI |
+|---|---|
+| You paste the schema manually | Introspects the live database (keys, enums, comments, relationships) |
+| Knows nothing about your project | Scans `.env`, `docker-compose.yml`, Prisma, SQLAlchemy, Django models, and `.sql` files |
+| Returns SQL and hopes it works | Parses, runs EXPLAIN, executes read-only, and self-repairs (up to 3 rounds) |
+| No safety net | Zero-trust: blocks dangerous statements, masks PII, clamps result limits |
+| Forgets everything | Remembers business definitions and learns from feedback |
+
+---
+
+## Key Features
+
+- **Real schema grounding:** live introspection of tables, columns, primary and foreign keys, enums, and comments.
+- **Workspace awareness:** auto-detects database configuration and understands your ORM models.
+- **Verify and self-repair loop:** `sqlglot` AST parsing, `EXPLAIN` checks, full-table-scan detection, read-only execution, and error feedback to the LLM.
+- **Interactive chat REPL:** multi-turn conversations with follow-up questions.
+- **Approval-gated writes:** dry-run, before and after previews, and rollback by default.
+- **Index advisor:** turns `EXPLAIN` warnings into concrete `CREATE INDEX` suggestions.
+- **Business memory:** teach it terms like "active user" through `QUERYMIND.md`.
+- **Learns from feedback:** similar past questions are injected as few-shot examples.
+- **Export:** output queries as `.sql`, Python, or JavaScript snippets.
+- **History and bookmarks:** revisit and save queries under aliases.
+- **MCP server mode:** use QueryMind as a tool from Claude Code and other agents.
+- **Multiple LLM providers:** Gemini, Groq, or fully offline with Ollama.
+- **Multiple databases:** MySQL and MariaDB, PostgreSQL, and SQLite.
+
+---
+
+## How It Works
+
+```mermaid
+flowchart LR
+    A[Your question] --> B[Explore<br/>schema and workspace]
+    B --> C[Draft SQL]
+    C --> D{Verify}
+    D -->|AST parse, EXPLAIN,<br/>scan check, read-only run| E{Passed?}
+    E -->|Yes| F[Results and SQL]
+    E -->|No, up to 3 rounds| G[Self-Repair<br/>error fed to LLM]
+    G --> C
+```
+
+1. **Explore:** the agent calls schema tools (`list_tables`, `describe_table`, and others) through a JSON action protocol and learns only what it needs.
+2. **Draft:** the LLM writes SQL using real schema context, your `QUERYMIND.md` rules, and similar past questions.
+3. **Verify:** the query is parsed into an AST, checked by the safety validator, analyzed with `EXPLAIN` (including full-table-scan detection), and executed in a read-only transaction.
+4. **Self-repair:** any syntax or runtime error is fed back to the LLM for up to 3 repair rounds.
+5. **Deliver:** you get the verified SQL, the results, and optional index advice.
+
+---
+
+## Installation
+
+**Requirements:** Python 3.11 or newer, and access to a MySQL/MariaDB, PostgreSQL, or SQLite database.
+
+From the root of the repository, create a virtual environment and install:
+
+```bash
+python -m venv venv
+
+# Linux / macOS
+source venv/bin/activate
+
+# Windows (PowerShell)
+venv\Scripts\activate
+
 pip install -e .
-
-# 1. Demo database (needs Docker). Or point QueryMind at your own MySQL.
-docker compose up -d
-export QUERYMIND_DB_URL=mysql://qm_readonly:qm_readonly_pw@127.0.0.1:3307/shop
-
-# 2. A free LLM key: https://aistudio.google.com  (Gemini), or console.groq.com (Groq)
-querymind keys set gemini          # prompts with hidden input
-
-# 3. Ask
-querymind ask "who are our 5 best customers by net spend this year?"
-querymind chat                     # interactive, supports follow-ups
 ```
 
-For your own project, run `querymind init` inside it: it detects connection settings from your `.env` or `docker-compose.yml`, creates a `QUERYMIND.md` for business rules, and writes a config file that contains **no secrets**.
-
-## Swapping API keys and providers
-
-This is designed so keys never end up in git and switching is one command.
-
-**Where keys live.** Looked up in this order, first match wins:
-
-1. the shell environment (`export GEMINI_API_KEY=...`)
-2. `./.env` in your project (git-ignored; see `.env.example`)
-3. `~/.config/querymind/credentials.env`, mode `600`, **outside any repository**
-
-```bash
-querymind keys set gemini        # store or replace a key (hidden prompt)
-querymind keys list              # where each key comes from, values masked
-querymind keys remove gemini
-querymind keys set QUERYMIND_DB_PASSWORD   # works for any ENV_VAR_NAME too
-```
-
-**Where config lives.** Config files only name the *environment variable* holding a key, never the key itself, so `.querymind/config.toml` is safe to commit. Precedence: defaults < `~/.config/querymind/config.toml` < `.querymind/config.toml` < env vars < CLI flags.
-
-**Swapping providers**
-
-```bash
-querymind provider list                      # status, model, fallback order
-querymind provider use groq                  # try Groq first; others become fallbacks
-querymind provider models gemini --grep flash   # live model ids for your key
-querymind provider set-model gemini <id>
-querymind provider test                      # verify keys + latency
-querymind ask "..." -p groq -m <model>       # one-off, no fallback
-```
-
-**Any OpenAI-compatible endpoint** (OpenRouter, a company gateway, vLLM, LM Studio...):
-
-```bash
-querymind provider add mygateway --base-url https://llm.example.com/v1 --model my-model
-querymind keys set mygateway
-```
-
-**Automatic fallback.** The default chain is `gemini -> groq -> ollama`. Providers without a key are skipped. If one hits a rate limit, a bad key, or an outage, QueryMind moves to the next, so free-tier limits do not surface as failures. Built-in presets: Gemini, Groq, OpenRouter, Mistral, Ollama.
-
-> **Heads-up:** free-tier limits and model ids change often. Defaults in `config.py` are starting points; use `provider models` to see what your key can access. Check each provider's terms, including how free-tier data may be used.
-
-## How it works
-
-```
-question -> read schema -> draft SQL -> validate (sqlglot) -> EXPLAIN -> execute (read-only)
-                                ^                                           |
-                                +------------- self-repair on error --------+
-```
-
-- Small and medium schemas go to the model in one compact prompt, so most questions take 1-2 model calls (kind to rate limits). Large schemas get an overview plus a `describe_tables` step.
-- The model replies in single JSON actions (`describe_tables`, `clarify`, `final`, ...), which works on every provider without depending on native tool-calling support.
-- Genuinely ambiguous requests ("top customers") produce a short clarifying question with options instead of a guess.
-- Empty results on filtered queries trigger one double-check of filter values before accepting.
-
-## Safety model
-
-Model output is treated as untrusted input, with independent layers:
-
-1. **Parse, don't pattern-match.** sqlglot must parse exactly one statement whose root is a query. Anything else (including `INTO OUTFILE`, `LOAD DATA`, `CALL`, `SHOW`) is rejected.
-2. **No writes anywhere in the tree**, so a `DELETE` hidden inside a CTE is caught. Dangerous functions (`LOAD_FILE`, `SLEEP`, `BENCHMARK`, `GET_LOCK`...) are blocked.
-3. **Tables must exist; cross-database access is refused.**
-4. **We execute regenerated SQL, never the model's raw text**, with comments stripped, so `/*!50000 ... */` tricks never reach the server.
-5. **Row cap** injected or clamped; results fetched with a hard limit.
-6. **Database-level defense:** read-only session, server-side execution timeout, and (recommended) a `SELECT`-only user. See `demo/02_readonly_user.sql`.
-
-Phase 0 is **read-only by design**. Use a least-privilege database user regardless.
-
-### Privacy
-
-By default QueryMind sends the model **schema only: no row values**. Opt in with `--allow-samples` (or `privacy = "samples"`) to let it inspect distinct values and sample rows, with emails and phone numbers masked. For fully local operation use Ollama. Keep in mind that your schema, question text, and `QUERYMIND.md` are sent to whichever provider you choose.
-
-## Commands
-
-| Command | What it does |
-|---|---|
-| `ask "..."` | One question. `--sql-only`, `--json`, `--csv out.csv`, `-p/-m`, `--allow-samples`, `--max-rows` |
-| `chat` | Interactive session with follow-ups, `/save`, and `/export` |
-| `run "SELECT ..."` | Your own SQL through the same safety pipeline (no LLM) |
-| `schema [table]` | What QueryMind sees in your database |
-| `explain <query.sql>` | Analyze query execution plan, warnings, index suggestions, and plain-English intent |
-| `modify <query.sql> "..."`| Modify an existing SQL query using natural language, verified by database |
-| `write "INSERT/UPDATE..."`| Approval-gated writes with transactional dry-run and row preview |
-| `export [options]` | Export a verified query as a .sql file, Python snippet, or JS snippet |
-| `remember "<rule>"` | Add a business rule or term definition to QUERYMIND.md |
-| `history` | View recent query session history |
-| `save <name> "<sql>"` | Save a query under a memorable alias |
-| `saved` | List all saved queries |
-| `mcp` | Run as an MCP stdio server for Claude Code and other agents |
-| `init` | Set up the current project |
-| `doctor` | Diagnose config, keys, git hygiene (`.env` not ignored?), connectivity |
-| `provider ...`, `keys ...` | Manage providers and keys |
-
-## Development
+For development tools (pytest and ruff), install the extras:
 
 ```bash
 pip install -e ".[dev]"
-pytest                 # 131 unit tests, no DB or API keys needed
-docker compose up -d
-QUERYMIND_TEST_DB_URL=mysql://qm_readonly:qm_readonly_pw@127.0.0.1:3307/shop pytest   # + live DB tests
-ruff check src tests
 ```
 
-Project layout:
+Verify the installation:
 
-```
-src/querymind/
-  cli.py            Typer commands
-  config.py         layered config + provider presets
-  secrets.py        key lookup/storage (env -> .env -> credentials.env)
-  agent/            the loop, prompts, JSON action protocol
-  llm/              OpenAI-compatible client + fallback router
-  adapters/         DatabaseAdapter interface + MySQL/MariaDB implementation
-  safety/           sqlglot validator, masking
-  workspace.py      QUERYMIND.md and .env/docker-compose discovery
+```bash
+querymind --help
 ```
 
-### Adding a database
+### Database drivers
 
-The agent only talks to `DatabaseAdapter` (`adapters/base.py`): `introspect`, `explain`, `execute_readonly`, `sample_rows`, `distinct_values`, `dialect_hints`. A PostgreSQL adapter is one new file plus a dialect name for the validator. No agent changes.
+MySQL and MariaDB support (`pymysql`) and SQLite support (built into Python) work out of the box. To use PostgreSQL, also install a PostgreSQL driver:
+
+```bash
+pip install "psycopg[binary]"
+```
+
+(`pg8000` is also supported as a pure-Python alternative.)
+
+---
+
+## Quick Start
+
+```bash
+# 1. Auto-detect your database configuration from the current project
+querymind init
+
+# 2. Store an LLM API key safely (outside your repository)
+querymind keys set gemini
+
+# 3. Check connectivity, credentials, and git hygiene
+querymind doctor
+
+# 4. Ask a question
+querymind ask "how many orders were placed last month?"
+
+# 5. Or start an interactive session
+querymind chat
+```
+
+No API key? Run fully offline with a local model:
+
+```bash
+querymind provider use ollama
+```
+
+---
+
+## Command Reference
+
+| Command | Purpose | Example |
+|---|---|---|
+| `querymind ask` | Plain English to verified SQL with results | `querymind ask "top 5 customers by revenue in 2024"` |
+| `querymind chat` | Interactive multi-turn REPL with context | `querymind chat` (supports `/save`, `/export`, and follow-ups) |
+| `querymind run` | Run your own SQL through the safety pipeline | `querymind run "SELECT * FROM customers"` |
+| `querymind schema` | Inspect database tables, columns, and keys | `querymind schema customers` |
+| `querymind explain` | Analyze query execution plans and index advice | `querymind explain query.sql` |
+| `querymind modify` | Natural-language edits to an existing `.sql` file | `querymind modify report.sql "filter only paid orders"` |
+| `querymind write` | Approval-gated writes with dry-run previews | `querymind write "UPDATE users SET status='active' WHERE id=1"` |
+| `querymind export` | Export a query to `.sql`, Python, or JavaScript | `querymind export --format python -o script.py` |
+| `querymind remember` | Save business logic rules to `QUERYMIND.md` | `querymind remember "active user = logged in last 30 days"` |
+| `querymind history` | View recent questions and executed queries | `querymind history --limit 10` |
+| `querymind save` | Bookmark a query under an alias | `querymind save monthly_rev "SELECT ..."` |
+| `querymind saved` | List all saved query bookmarks | `querymind saved` |
+| `querymind mcp` | Run as an MCP server for Claude Code and agents | `querymind mcp` |
+| `querymind init` | Auto-detect database config from the project and set up | `querymind init` |
+| `querymind doctor` | Check connectivity, credentials, and git hygiene | `querymind doctor` |
+| `querymind provider` | Manage LLM providers (Gemini, Groq, Ollama) | `querymind provider use groq` |
+| `querymind keys` | Store API keys safely outside the repository | `querymind keys set gemini` |
+
+Run `querymind <command> --help` to see every option. Every command is also available through the `qm` alias.
+
+---
+
+## Configuration
+
+Configuration is hierarchical. Later sources override earlier ones:
+
+1. Built-in defaults
+2. TOML config file
+3. Environment variables
+4. CLI flags
+
+Credentials are never stored inside your project. They live in this file, with permissions set to `600`:
+
+```
+~/.config/querymind/credentials.env
+```
+
+Run `querymind init` to auto-detect your database settings from `.env`, `docker-compose.yml`, or your ORM configuration. Run `querymind doctor` at any time to confirm that your database connection and credentials are working.
+
+---
+
+## LLM Providers
+
+QueryMind talks to LLMs through an OpenAI-compatible client, which lets it work with free-tier APIs as well as local models.
+
+| Provider | Type | Setup |
+|---|---|---|
+| Gemini | Cloud | `querymind keys set gemini` |
+| Groq | Cloud | `querymind keys set groq` |
+| Ollama | Local, fully offline | Install Ollama, then `querymind provider use ollama` |
+
+Switch providers at any time:
+
+```bash
+querymind provider use groq
+```
+
+The built-in LLM router supports fallbacks between providers.
+
+---
+
+## Safety, Privacy and Write Protections
+
+QueryMind is built on a zero-trust model.
+
+### Read-only by default
+
+- Read queries run in a read-only transaction (`SET SESSION TRANSACTION READ ONLY` on MySQL, or the equivalent on other engines).
+- Strict server-side timeouts (such as `MAX_EXECUTION_TIME`) and clamped result limits are enforced.
+
+### AST validation
+
+- Queries are parsed with `sqlglot` and must contain exactly one statement.
+- Dangerous operations are unconditionally blocked: `DROP`, `ALTER`, `TRUNCATE`, `CALL`, `INTO OUTFILE`, `LOAD_FILE`, and `SLEEP`.
+
+### Approval-gated writes
+
+`querymind write` is the only path that can change data, and it is gated:
+
+- Requires an explicit `--yes` flag or an interactive `[y/N]` confirmation.
+- Runs inside a transaction with a dry-run that counts affected rows and shows before and after previews.
+- Executes `ROLLBACK` unless you explicitly confirm `COMMIT`.
+- Blocks any `UPDATE` or `DELETE` that has no `WHERE` clause.
+
+### Data privacy tiers
+
+| Tier | What the LLM sees |
+|---|---|
+| Schema-only (default) | Schema metadata only, never live row data |
+| Sample mode (opt-in) | Small row samples, with automatic masking of emails, phone numbers, and sensitive identifiers |
+| Local mode | Everything stays on your machine via Ollama |
+
+### Secret hygiene
+
+- API keys and database credentials are stored outside any git repository.
+- `querymind doctor` flags credential and git hygiene problems.
+
+> **Recommendation:** QueryMind adds several safety layers, but you should still connect with a least-privilege (ideally read-only) database user and test write operations on non-production data first.
+
+---
+
+## Workspace Awareness and QUERYMIND.md
+
+QueryMind scans your project to understand your data model:
+
+- `.env` and `docker-compose.yml` for connection settings
+- Prisma schemas
+- SQLAlchemy models
+- Django models
+- Existing `.sql` files
+- `QUERYMIND.md` for business definitions
+
+Teach it your vocabulary:
+
+```bash
+querymind remember "active user = logged in within the last 30 days"
+querymind remember "revenue = sum of paid orders, excluding refunds"
+```
+
+These rules are saved to `QUERYMIND.md` and applied to future questions. Commit this file so your whole team shares the same definitions.
+
+---
+
+## Use as an MCP Server
+
+QueryMind can run as a [Model Context Protocol](https://modelcontextprotocol.io) stdio server, so agents such as Claude Code can query your database through the same safety pipeline.
+
+```bash
+querymind mcp
+```
+
+Example client configuration:
+
+```json
+{
+  "mcpServers": {
+    "querymind": {
+      "command": "querymind",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+---
+
+## Benchmarks
+
+A built-in benchmark suite measures end-to-end quality.
+
+**Dataset:** `bench/questions.json` contains 45 questions across three tiers.
+
+| Tier | Count | Covers |
+|---|---|---|
+| Easy | 15 | Single-table filters, aggregations, orderings, distinct counts |
+| Medium | 15 | Multi-table joins, subqueries, `GROUP BY` with `HAVING`, date arithmetic |
+| Hard | 15 | CTEs, window functions (`ROW_NUMBER()`, `DENSE_RANK()`), churn, year-over-year revenue, running totals |
+
+**Runner:** `bench/runner.py` reports execution accuracy, repair attempts required, median query latency, and estimated token cost, shown as Rich console tables plus a Markdown summary.
+
+```bash
+python bench/runner.py
+```
+
+---
+
+## Project Structure
+
+```
+querymind-cli/
+├── pyproject.toml
+├── README.md
+├── src/querymind/
+│   ├── cli.py                 # Typer CLI (17 commands + Rich REPL)
+│   ├── config.py              # Hierarchical config (TOML, env, flags)
+│   ├── secrets.py             # Out-of-repo credential management
+│   ├── export.py              # Exporters (.sql, Python, JavaScript)
+│   ├── history.py             # Session history and saved queries
+│   ├── mcp_server.py          # MCP stdio server
+│   ├── workspace_scanner.py   # Prisma / SQLAlchemy / Django parsers
+│   ├── agent/
+│   │   ├── agent.py           # Explore -> Draft -> Verify -> Self-Repair loop
+│   │   ├── prompts.py         # Prompt templates and few-shot injector
+│   │   └── protocol.py        # JSON action protocol
+│   ├── adapters/
+│   │   ├── base.py            # DatabaseAdapter ABC, Schema, Table, Column, PlanInfo
+│   │   ├── mysql.py           # MySQL / MariaDB
+│   │   ├── postgres.py        # PostgreSQL
+│   │   └── sqlite.py          # SQLite
+│   ├── safety/
+│   │   ├── validator.py       # AST parsing, read-only gating, PII masking
+│   │   ├── index_advisor.py   # EXPLAIN warnings -> CREATE INDEX suggestions
+│   │   └── writer.py          # Dry-run and approval-gated writes
+│   └── learning/
+│       ├── similarity.py      # Jaccard n-gram similarity
+│       └── feedback.py        # FeedbackStore (.querymind/feedback.jsonl)
+├── bench/
+│   ├── questions.json         # 45 tiered evaluation questions
+│   └── runner.py              # Benchmark runner
+└── tests/                     # 131 automated unit tests
+```
+
+The codebase is decoupled through the `DatabaseAdapter` abstract base class, so new database engines can be added without touching the agent.
+
+---
+
+## Development and Testing
+
+Install the development extras and run the test suite:
+
+```bash
+pip install -e ".[dev]"
+pytest -q
+```
+
+Expected result: 131 passed, 9 skipped.
+
+The 9 skipped tests are live integration tests marked `integration`. They need a running MySQL or MariaDB server and are skipped unless you point them at one by setting the `QUERYMIND_TEST_DB_URL` environment variable:
+
+```bash
+# Linux / macOS
+export QUERYMIND_TEST_DB_URL="mysql://user:password@localhost:3306/testdb"
+
+# Windows (PowerShell)
+$env:QUERYMIND_TEST_DB_URL = "mysql://user:password@localhost:3306/testdb"
+
+pytest -q
+```
+
+Use a disposable test database, never one that holds real data.
+
+Linting is handled by ruff:
+
+```bash
+ruff check .
+```
+
+**Test coverage includes:** LLM router fallbacks, protocol actions, ORM parsing (Prisma, SQLAlchemy, Django), feedback store similarity, index advisor, transactional writer, SQLite adapter lifecycle, export utilities, and AST safety validators.
+
+---
 
 ## Roadmap
 
-- [x] Phase 0: MySQL/MariaDB, provider router, safety layer, self-repair, project notes
-- [x] Benchmark suite with execution-accuracy scoring (easy/medium/hard tiering, 45 questions)
-- [x] Learn from corrections: store feedback queries, retrieve similar ones as few-shot examples
-- [x] Workspace scanning: migrations and ORM models (Prisma, SQLAlchemy, Django)
-- [x] Approval-gated writes with transaction dry-runs and interactive commit confirmation
-- [x] PostgreSQL and SQLite adapters
-- [x] MCP server mode so other coding agents can call QueryMind
-- [ ] Phase 3 final: MongoDB adapter (aggregation pipelines)
+- [x] **Phase 0, MVP:** schema-grounded `ask` with verify loop
+- [x] **Phase 1, Product quality:** chat REPL, history, config, doctor, workspace scanner
+- [x] **Phase 2, Writes and polish:** approval-gated writes, index advisor, exporters, MCP server
+- [x] **Phase 3, Relational expansion:** PostgreSQL and SQLite adapters
+- [ ] **Next, MongoDB:** deferred because document aggregation needs a distinct query pipeline (the `DatabaseAdapter` design already accommodates it)
 
-## Limitations
+---
 
-- Results can be plausible but wrong. Always read the SQL and explanation; ambiguous business terms belong in `QUERYMIND.md`.
-- Free-tier models are weaker than frontier models on the hardest queries; expect occasional repair rounds.
-- Developed and tested against MariaDB 10.11 (MySQL wire-compatible). The included CI workflow targets MySQL 8.4; MySQL-specific paths such as `MAX_EXECUTION_TIME` are worth confirming on your own server with `querymind doctor` and the integration tests.
+## Contributing
+
+Contributions are welcome.
+
+1. Fork the repository.
+2. Create a feature branch: `git checkout -b feat/my-feature`
+3. Add tests for your change.
+4. Make sure `pytest -q` and `ruff check .` pass.
+5. Open a pull request describing what you changed and why.
+
+Please never commit API keys, database credentials, or real data.
+
+---
 
 ## License
 
-MIT
+Distributed under the MIT License. See the [LICENSE](LICENSE) file for details.
