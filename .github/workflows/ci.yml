@@ -1,0 +1,37 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: demo_root_pw
+        ports: ["3307:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pdemo_root_pw"
+          --health-interval=5s --health-timeout=3s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e ".[dev]"
+      - run: ruff check src tests
+      - name: Load demo database
+        run: |
+          sudo apt-get install -y -qq mysql-client
+          mysql -h127.0.0.1 -P3307 -uroot -pdemo_root_pw < demo/01_shop.sql
+          mysql -h127.0.0.1 -P3307 -uroot -pdemo_root_pw < demo/02_readonly_user.sql
+      - name: Tests (unit + live MySQL integration)
+        env:
+          QUERYMIND_TEST_DB_URL: mysql://qm_readonly:qm_readonly_pw@127.0.0.1:3307/shop
+        run: pytest -q

@@ -1,0 +1,17 @@
+# One-command demo database:  docker compose up -d
+# Then:  export QUERYMIND_DB_URL=mysql://qm_readonly:qm_readonly_pw@127.0.0.1:3307/shop
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: querymind-demo-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: demo_root_pw
+    ports:
+      - "3307:3306"
+    volumes:
+      - ./demo:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-pdemo_root_pw"]
+      interval: 5s
+      timeout: 3s
+      retries: 20

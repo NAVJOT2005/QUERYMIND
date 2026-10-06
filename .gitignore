@@ -1,0 +1,39 @@
+# secrets - never commit these
+.env
+.env.*
+!.env.example
+credentials.env
+*.key
+
+# python
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+
+# local querymind state (project config is safe to commit; cache/history/feedback are not)
+.querymind/cache/
+.querymind/history*
+.querymind/feedback*
+.querymind/saved.json
+
+# editors & IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+
+# coverage & logs
+*.log
+.coverage
+htmlcov/

@@ -1,0 +1,317 @@
+[
+  {
+    "id": 1,
+    "tier": "easy",
+    "question": "How many customers are there in total?",
+    "expected_tables": ["customers"],
+    "tags": ["count", "single_table"]
+  },
+  {
+    "id": 2,
+    "tier": "easy",
+    "question": "List all product categories and their ids.",
+    "expected_tables": ["categories"],
+    "tags": ["select", "single_table"]
+  },
+  {
+    "id": 3,
+    "tier": "easy",
+    "question": "How many active products do we currently sell?",
+    "expected_tables": ["products"],
+    "tags": ["filter", "count"]
+  },
+  {
+    "id": 4,
+    "tier": "easy",
+    "question": "What is the average list price of our active products?",
+    "expected_tables": ["products"],
+    "tags": ["aggregate", "avg"]
+  },
+  {
+    "id": 5,
+    "tier": "easy",
+    "question": "Find the 5 most expensive products by price.",
+    "expected_tables": ["products"],
+    "tags": ["order_by", "limit"]
+  },
+  {
+    "id": 6,
+    "tier": "easy",
+    "question": "How many customers signed up in 2024?",
+    "expected_tables": ["customers"],
+    "tags": ["date_filter", "count"]
+  },
+  {
+    "id": 7,
+    "tier": "easy",
+    "question": "Show all customers from Germany (DE).",
+    "expected_tables": ["customers"],
+    "tags": ["filter", "enum_code"]
+  },
+  {
+    "id": 8,
+    "tier": "easy",
+    "question": "Count the number of business segment customers versus consumer segment.",
+    "expected_tables": ["customers"],
+    "tags": ["group_by", "count"]
+  },
+  {
+    "id": 9,
+    "tier": "easy",
+    "question": "How many orders were placed in total?",
+    "expected_tables": ["orders"],
+    "tags": ["count"]
+  },
+  {
+    "id": 10,
+    "tier": "easy",
+    "question": "List the distinct order status values.",
+    "expected_tables": ["orders"],
+    "tags": ["distinct"]
+  },
+  {
+    "id": 11,
+    "tier": "easy",
+    "question": "How many orders have been cancelled?",
+    "expected_tables": ["orders"],
+    "tags": ["filter", "status"]
+  },
+  {
+    "id": 12,
+    "tier": "easy",
+    "question": "What is the highest quantity ordered in a single line item?",
+    "expected_tables": ["order_items"],
+    "tags": ["max"]
+  },
+  {
+    "id": 13,
+    "tier": "easy",
+    "question": "How many product reviews have a rating of 5?",
+    "expected_tables": ["reviews"],
+    "tags": ["filter", "count"]
+  },
+  {
+    "id": 14,
+    "tier": "easy",
+    "question": "What is the overall average customer review rating?",
+    "expected_tables": ["reviews"],
+    "tags": ["avg"]
+  },
+  {
+    "id": 15,
+    "tier": "easy",
+    "question": "Find the 10 products with the lowest stock remaining.",
+    "expected_tables": ["products"],
+    "tags": ["order_by", "limit"]
+  },
+  {
+    "id": 16,
+    "tier": "medium",
+    "question": "Which customer placed the most orders, and how many did they place?",
+    "expected_tables": ["customers", "orders"],
+    "tags": ["join", "group_by", "order_by"]
+  },
+  {
+    "id": 17,
+    "tier": "medium",
+    "question": "What is the total revenue generated from all delivered or shipped orders?",
+    "expected_tables": ["orders", "order_items"],
+    "tags": ["join", "sum", "math"]
+  },
+  {
+    "id": 18,
+    "tier": "medium",
+    "question": "List each category name along with the number of products in it.",
+    "expected_tables": ["categories", "products"],
+    "tags": ["join", "group_by"]
+  },
+  {
+    "id": 19,
+    "tier": "medium",
+    "question": "What are our top 5 best-selling products by total quantity sold?",
+    "expected_tables": ["products", "order_items", "orders"],
+    "tags": ["join", "group_by", "order_by"]
+  },
+  {
+    "id": 20,
+    "tier": "medium",
+    "question": "Find all products that have never received any review.",
+    "expected_tables": ["products", "reviews"],
+    "tags": ["left_join", "null_check"]
+  },
+  {
+    "id": 21,
+    "tier": "medium",
+    "question": "Calculate the average review rating for each product, showing product name and average rating.",
+    "expected_tables": ["products", "reviews"],
+    "tags": ["join", "group_by", "avg"]
+  },
+  {
+    "id": 22,
+    "tier": "medium",
+    "question": "How many orders were placed by customers in Canada in 2024?",
+    "expected_tables": ["customers", "orders"],
+    "tags": ["join", "date_filter", "count"]
+  },
+  {
+    "id": 23,
+    "tier": "medium",
+    "question": "What is the total net revenue after discounts for each country?",
+    "expected_tables": ["customers", "orders", "order_items"],
+    "tags": ["multi_join", "math", "group_by"]
+  },
+  {
+    "id": 24,
+    "tier": "medium",
+    "question": "Find all customers who have spent more than $1,000 in total net purchases.",
+    "expected_tables": ["customers", "orders", "order_items"],
+    "tags": ["having", "group_by", "math"]
+  },
+  {
+    "id": 25,
+    "tier": "medium",
+    "question": "Show monthly order counts for the year 2024.",
+    "expected_tables": ["orders"],
+    "tags": ["date_trunc", "group_by"]
+  },
+  {
+    "id": 26,
+    "tier": "medium",
+    "question": "Which categories have an average product price over $100?",
+    "expected_tables": ["categories", "products"],
+    "tags": ["join", "group_by", "having"]
+  },
+  {
+    "id": 27,
+    "tier": "medium",
+    "question": "List all orders that included items discounted by 20% or more.",
+    "expected_tables": ["orders", "order_items"],
+    "tags": ["join", "distinct", "filter"]
+  },
+  {
+    "id": 28,
+    "tier": "medium",
+    "question": "What percentage of our customers have placed at least one order?",
+    "expected_tables": ["customers", "orders"],
+    "tags": ["subquery", "math"]
+  },
+  {
+    "id": 29,
+    "tier": "medium",
+    "question": "Show the number of orders and total revenue per customer segment.",
+    "expected_tables": ["customers", "orders", "order_items"],
+    "tags": ["multi_join", "group_by"]
+  },
+  {
+    "id": 30,
+    "tier": "medium",
+    "question": "Find products with an average rating below 3.0 that have at least 2 reviews.",
+    "expected_tables": ["products", "reviews"],
+    "tags": ["join", "having", "count", "avg"]
+  },
+  {
+    "id": 31,
+    "tier": "hard",
+    "question": "Rank customers by net spend in each country using a window function.",
+    "expected_tables": ["customers", "orders", "order_items"],
+    "tags": ["cte", "window_function", "rank"]
+  },
+  {
+    "id": 32,
+    "tier": "hard",
+    "question": "Calculate quarter-over-quarter revenue growth comparing each quarter in 2024.",
+    "expected_tables": ["orders", "order_items"],
+    "tags": ["cte", "lag", "window_function"]
+  },
+  {
+    "id": 33,
+    "tier": "hard",
+    "question": "Find the top 3 best-selling products in each category by revenue.",
+    "expected_tables": ["categories", "products", "orders", "order_items"],
+    "tags": ["cte", "row_number", "partition_by"]
+  },
+  {
+    "id": 34,
+    "tier": "hard",
+    "question": "Find repeat customers: customers who placed their second order within 30 days of their first order.",
+    "expected_tables": ["customers", "orders"],
+    "tags": ["self_join", "window_function", "datediff"]
+  },
+  {
+    "id": 35,
+    "tier": "hard",
+    "question": "List all subcategories along with their parent category name using a self-join.",
+    "expected_tables": ["categories"],
+    "tags": ["self_join", "hierarchy"]
+  },
+  {
+    "id": 36,
+    "tier": "hard",
+    "question": "For each customer, find their first order date and their most recent order date, and the days between them.",
+    "expected_tables": ["customers", "orders"],
+    "tags": ["group_by", "min_max", "datediff"]
+  },
+  {
+    "id": 37,
+    "tier": "hard",
+    "question": "Calculate customer lifetime value (LTV): total revenue divided by unique customers who purchased.",
+    "expected_tables": ["customers", "orders", "order_items"],
+    "tags": ["subquery", "math", "aggregate"]
+  },
+  {
+    "id": 38,
+    "tier": "hard",
+    "question": "Identify products where the unit price sold in order_items was lower than the current product list price.",
+    "expected_tables": ["products", "order_items"],
+    "tags": ["join", "comparison", "distinct"]
+  },
+  {
+    "id": 39,
+    "tier": "hard",
+    "question": "Show the cumulative running total of revenue by day for the month of January 2024.",
+    "expected_tables": ["orders", "order_items"],
+    "tags": ["cte", "window_function", "running_sum"]
+  },
+  {
+    "id": 40,
+    "tier": "hard",
+    "question": "Find customers who ordered in 2023 but have not placed any orders in 2024 (churned customers).",
+    "expected_tables": ["customers", "orders"],
+    "tags": ["not_exists", "subquery", "churn"]
+  },
+  {
+    "id": 41,
+    "tier": "hard",
+    "question": "What is the average order value (AOV) for each country, excluding cancelled and refunded orders?",
+    "expected_tables": ["customers", "orders", "order_items"],
+    "tags": ["cte", "group_by", "status_filter"]
+  },
+  {
+    "id": 42,
+    "tier": "hard",
+    "question": "Find the category that generates the highest revenue per in-stock item.",
+    "expected_tables": ["categories", "products", "orders", "order_items"],
+    "tags": ["multi_join", "math", "order_by"]
+  },
+  {
+    "id": 43,
+    "tier": "hard",
+    "question": "Identify any orders where the total discount exceeded 50% of the gross order value.",
+    "expected_tables": ["orders", "order_items"],
+    "tags": ["group_by", "having", "math"]
+  },
+  {
+    "id": 44,
+    "tier": "hard",
+    "question": "Calculate the month-over-month retention rate of customers who made repeat purchases in consecutive months.",
+    "expected_tables": ["orders"],
+    "tags": ["cte", "self_join", "cohort"]
+  },
+  {
+    "id": 45,
+    "tier": "hard",
+    "question": "Find products that have high ratings (avg rating >= 4.5) but low sales (less than 10 units sold).",
+    "expected_tables": ["products", "reviews", "order_items", "orders"],
+    "tags": ["multi_join", "group_by", "having", "aggregate"]
+  }
+]
